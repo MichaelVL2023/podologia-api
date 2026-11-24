@@ -1,0 +1,2885 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "API Reserva de Citas - Consultorio de Podología",
+    "version": "2.0.0",
+    "description": "Contrato de la API (design-first). Las pacientes se registran, eligen un servicio y reservan un horario libre de la podóloga. La podóloga (ADMIN) administra su agenda, atiende, registra la consulta y el cobro (efectivo o Yape, en el consultorio). Todos los endpoints exigen un token JWT (bearerAuth), salvo registro, login y catálogo. Roles. ADMIN es la podóloga; USUARIO es la paciente. Cada operación indica sus roles en x-roles. Una paciente solo accede a sus propios datos.\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Desarrollo local"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Autenticación",
+      "description": "Registro, inicio de sesión y datos de la sesión actual"
+    },
+    {
+      "name": "Servicios",
+      "description": "Catálogo de servicios con duración y precio"
+    },
+    {
+      "name": "Horarios",
+      "description": "Horario de atención semanal y bloqueos de la podóloga"
+    },
+    {
+      "name": "Disponibilidad",
+      "description": "Horarios libres para reservar"
+    },
+    {
+      "name": "Citas",
+      "description": "Reserva y gestión de citas"
+    },
+    {
+      "name": "Pacientes",
+      "description": "Fichas de pacientes"
+    },
+    {
+      "name": "Consultas",
+      "description": "Atenciones realizadas (historia clínica y monto a cobrar)"
+    },
+    {
+      "name": "Pagos",
+      "description": "Cobros registrados por consulta (efectivo o Yape)"
+    },
+    {
+      "name": "Reportes",
+      "description": "Resúmenes de ingresos y saldos"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/auth/registro": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "operationId": "registrarse",
+        "summary": "La paciente crea su cuenta",
+        "description": "Crea la cuenta con rol USUARIO y su ficha de paciente enlazada, e inicia sesión. Si ya existe una ficha creada por la podóloga con el mismo DNI y sin cuenta, la cuenta se enlaza a esa ficha.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistroRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cuenta creada y sesión iniciada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "operationId": "iniciarSesion",
+        "summary": "Inicia sesión y devuelve un token JWT",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sesión iniciada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "description": "Correo o contraseña incorrectos, o cuenta inactiva",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Autenticación"
+        ],
+        "operationId": "obtenerSesionActual",
+        "summary": "Devuelve el usuario autenticado",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Usuario de la sesión actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Usuario"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      }
+    },
+    "/api/auth/contrasena": {
+      "put": {
+        "tags": [
+          "Autenticación"
+        ],
+        "operationId": "cambiarContrasena",
+        "summary": "Cambia la contraseña del usuario autenticado",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CambioContrasenaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Contraseña actualizada"
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      }
+    },
+    "/api/servicios": {
+      "get": {
+        "tags": [
+          "Servicios"
+        ],
+        "operationId": "listarServicios",
+        "summary": "Lista el catálogo de servicios",
+        "description": "Devuelve los servicios activos. Si el usuario es ADMIN y envía incluirInactivos=true, también devuelve los inactivos.\n",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "parameters": [
+          {
+            "name": "incluirInactivos",
+            "in": "query",
+            "description": "Solo tiene efecto para ADMIN",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de servicios",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Servicio"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Servicios"
+        ],
+        "operationId": "crearServicio",
+        "summary": "Crea un servicio",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicioRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Servicio creado",
+            "headers": {
+              "Location": {
+                "description": "URL del servicio creado",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "/api/v1/servicios/2"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Servicio"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      }
+    },
+    "/api/servicios/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ServicioId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Servicios"
+        ],
+        "operationId": "obtenerServicio",
+        "summary": "Obtiene un servicio por id",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Servicio encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Servicio"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Servicios"
+        ],
+        "operationId": "actualizarServicio",
+        "summary": "Actualiza un servicio o lo desactiva",
+        "description": "Los servicios no se eliminan; se desactivan con activo=false.",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicioRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Servicio actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Servicio"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      }
+    },
+    "/api/horarios/semanal": {
+      "get": {
+        "tags": [
+          "Horarios"
+        ],
+        "operationId": "obtenerHorarioSemanal",
+        "summary": "Devuelve el horario de atención semanal",
+        "description": "Puede haber varios bloques por día (por ejemplo, mañana y tarde).",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Bloques de atención",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HorarioSemanal"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Horarios"
+        ],
+        "operationId": "reemplazarHorarioSemanal",
+        "summary": "Reemplaza el horario de atención semanal completo",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HorarioSemanal"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Horario actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HorarioSemanal"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      }
+    },
+    "/api/horarios/bloqueos": {
+      "get": {
+        "tags": [
+          "Horarios"
+        ],
+        "operationId": "listarBloqueos",
+        "summary": "Lista los bloqueos de agenda (vacaciones, feriados, permisos)",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Desde"
+          },
+          {
+            "$ref": "#/components/parameters/Hasta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de bloqueos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Bloqueo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Horarios"
+        ],
+        "operationId": "crearBloqueo",
+        "summary": "Bloquea un rango de la agenda",
+        "description": "Las citas ya reservadas dentro del rango no se cancelan automáticamente; la respuesta 409 lo indica.",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BloqueoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Bloqueo creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bloqueo"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/horarios/bloqueos/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BloqueoId"
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Horarios"
+        ],
+        "operationId": "eliminarBloqueo",
+        "summary": "Elimina un bloqueo de agenda",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "responses": {
+          "204": {
+            "description": "Bloqueo eliminado"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      }
+    },
+    "/api/disponibilidad": {
+      "get": {
+        "tags": [
+          "Disponibilidad"
+        ],
+        "operationId": "consultarDisponibilidad",
+        "summary": "Horarios libres de un día para un servicio",
+        "description": "Calcula los horarios de inicio posibles según el horario semanal, la duración del servicio, los bloqueos y las citas ya reservadas (estado RESERVADA). No devuelve horarios pasados.\n",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "parameters": [
+          {
+            "name": "servicioId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "example": 2
+          },
+          {
+            "name": "fecha",
+            "in": "query",
+            "required": true,
+            "description": "Día a consultar (yyyy-MM-dd)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-11-24"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Horarios libres, vacío si no hay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Disponibilidad"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      }
+    },
+    "/api/citas": {
+      "get": {
+        "tags": [
+          "Citas"
+        ],
+        "operationId": "listarCitas",
+        "summary": "Lista citas con filtros y paginación",
+        "description": "ADMIN ve todas las citas y puede filtrar por paciente. USUARIO ve solo las suyas y se ignora pacienteId. Ordenadas por inicio ascendente.\n",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "parameters": [
+          {
+            "name": "fecha",
+            "in": "query",
+            "description": "Solo las citas de este día",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-11-24"
+          },
+          {
+            "name": "pacienteId",
+            "in": "query",
+            "description": "Solo las citas de este paciente (solo ADMIN)",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "estado",
+            "in": "query",
+            "description": "Solo las citas en este estado",
+            "schema": {
+              "$ref": "#/components/schemas/EstadoCita"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Pagina"
+          },
+          {
+            "$ref": "#/components/parameters/Tamano"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de citas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaCitas"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Citas"
+        ],
+        "operationId": "reservarCita",
+        "summary": "Reserva una cita",
+        "description": "La cita nace en estado RESERVADA y el fin se calcula con la duración del servicio. Si el horario ya no está libre responde 409 con el código HORARIO_NO_DISPONIBLE. USUARIO reserva para sí misma; ADMIN puede indicar pacienteId para reservar a nombre de una paciente.\n",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CitaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cita reservada",
+            "headers": {
+              "Location": {
+                "description": "URL de la cita creada",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "/api/v1/citas/40"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cita"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/citas/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CitaId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Citas"
+        ],
+        "operationId": "obtenerCita",
+        "summary": "Obtiene una cita por id",
+        "description": "USUARIO solo puede ver sus propias citas.",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Cita encontrada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cita"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      }
+    },
+    "/api/citas/{id}/reprogramacion": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CitaId"
+        }
+      ],
+      "put": {
+        "tags": [
+          "Citas"
+        ],
+        "operationId": "reprogramarCita",
+        "summary": "Cambia el horario de una cita reservada",
+        "description": "Solo citas en estado RESERVADA. El nuevo horario debe estar libre.",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReprogramacionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cita reprogramada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cita"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/citas/{id}/cancelacion": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CitaId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Citas"
+        ],
+        "operationId": "cancelarCita",
+        "summary": "Cancela una cita reservada",
+        "description": "Solo citas en estado RESERVADA. Libera el horario.",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelacionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cita cancelada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cita"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/citas/{id}/estado": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CitaId"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Citas"
+        ],
+        "operationId": "cambiarEstadoCita",
+        "summary": "Marca una cita como ATENDIDA o NO_ASISTIO",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CambioEstadoCitaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cita"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/pacientes/mi-perfil": {
+      "get": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "obtenerMiPerfil",
+        "summary": "Ficha de la paciente autenticada",
+        "x-roles": [
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ficha de la paciente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paciente"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "actualizarMiPerfil",
+        "summary": "La paciente actualiza sus propios datos",
+        "x-roles": [
+          "USUARIO"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PacienteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ficha actualizada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paciente"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      }
+    },
+    "/api/pacientes": {
+      "get": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "listarPacientes",
+        "summary": "Lista pacientes con búsqueda y paginación",
+        "description": "Ordenados por apellidos. El parámetro q busca en nombres, apellidos o documento.",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Texto a buscar en nombres, apellidos o documento",
+            "schema": {
+              "type": "string"
+            },
+            "example": "vasquez"
+          },
+          {
+            "$ref": "#/components/parameters/Pagina"
+          },
+          {
+            "$ref": "#/components/parameters/Tamano"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de pacientes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaPacientes"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "crearPaciente",
+        "summary": "Registra una paciente sin cuenta (por ejemplo, atención presencial)",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PacienteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Paciente creada",
+            "headers": {
+              "Location": {
+                "description": "URL de la paciente creada",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "/api/v1/pacientes/15"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paciente"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/pacientes/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PacienteId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "obtenerPaciente",
+        "summary": "Obtiene una paciente por id",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "responses": {
+          "200": {
+            "description": "Paciente encontrada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paciente"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "actualizarPaciente",
+        "summary": "Actualiza los datos de una paciente",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PacienteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paciente actualizada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paciente"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Pacientes"
+        ],
+        "operationId": "eliminarPaciente",
+        "summary": "Elimina una paciente que no tenga citas, consultas ni cuenta",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "responses": {
+          "204": {
+            "description": "Paciente eliminada"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/consultas": {
+      "get": {
+        "tags": [
+          "Consultas"
+        ],
+        "operationId": "listarConsultas",
+        "summary": "Lista consultas con filtros y paginación",
+        "description": "ADMIN ve todas y puede filtrar por paciente. USUARIO ve solo las suyas y se ignora pacienteId. Ordenadas por fecha descendente.\n",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "parameters": [
+          {
+            "name": "pacienteId",
+            "in": "query",
+            "description": "Solo las consultas de esta paciente (solo ADMIN)",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Desde"
+          },
+          {
+            "$ref": "#/components/parameters/Hasta"
+          },
+          {
+            "name": "conSaldo",
+            "in": "query",
+            "description": "Si es true, solo consultas con saldo pendiente de cobro",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Pagina"
+          },
+          {
+            "$ref": "#/components/parameters/Tamano"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de consultas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaConsultas"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Consultas"
+        ],
+        "operationId": "registrarConsulta",
+        "summary": "Registra una consulta",
+        "description": "Si se indica citaId, esa cita pasa a ATENDIDA y, si no se envía monto, se usa el precio del servicio de la cita. Si no se envía fecha, se usa la actual.\n",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsultaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Consulta registrada",
+            "headers": {
+              "Location": {
+                "description": "URL de la consulta creada",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "/api/v1/consultas/120"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consulta"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/consultas/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ConsultaId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Consultas"
+        ],
+        "operationId": "obtenerConsulta",
+        "summary": "Obtiene una consulta con su monto, pagado y saldo",
+        "description": "USUARIO solo puede ver sus propias consultas.",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Consulta encontrada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consulta"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Consultas"
+        ],
+        "operationId": "actualizarConsulta",
+        "summary": "Corrige los datos de una consulta",
+        "description": "El monto no puede quedar por debajo de lo ya pagado.",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsultaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consulta actualizada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consulta"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/pagos": {
+      "get": {
+        "tags": [
+          "Pagos"
+        ],
+        "operationId": "listarPagos",
+        "summary": "Lista pagos con filtros y paginación",
+        "description": "ADMIN ve todos. USUARIO ve solo los de sus consultas. Ordenados por fecha descendente.\n",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "parameters": [
+          {
+            "name": "consultaId",
+            "in": "query",
+            "description": "Solo los pagos de esta consulta",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "metodo",
+            "in": "query",
+            "description": "Solo los pagos con este método",
+            "schema": {
+              "$ref": "#/components/schemas/MetodoPago"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Desde"
+          },
+          {
+            "$ref": "#/components/parameters/Hasta"
+          },
+          {
+            "$ref": "#/components/parameters/Pagina"
+          },
+          {
+            "$ref": "#/components/parameters/Tamano"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de pagos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaPagos"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pagos"
+        ],
+        "operationId": "registrarPago",
+        "summary": "Registra un pago (efectivo o Yape) de una consulta",
+        "description": "El monto no puede superar el saldo pendiente de la consulta. Para YAPE se recomienda enviar el número de operación en referencia. Se puede pagar en varias cuotas.\n",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PagoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pago registrado",
+            "headers": {
+              "Location": {
+                "description": "URL del pago creado",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "/api/v1/pagos/300"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pago"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflicto"
+          }
+        }
+      }
+    },
+    "/api/pagos/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PagoId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Pagos"
+        ],
+        "operationId": "obtenerPago",
+        "summary": "Obtiene un pago por id",
+        "description": "USUARIO solo puede ver pagos de sus propias consultas.",
+        "x-roles": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "responses": {
+          "200": {
+            "description": "Pago encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pago"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "404": {
+            "$ref": "#/components/responses/NoEncontrado"
+          }
+        }
+      }
+    },
+    "/api/reportes/resumen": {
+      "get": {
+        "tags": [
+          "Reportes"
+        ],
+        "operationId": "obtenerResumen",
+        "summary": "Resumen de ingresos y atención en un rango de fechas",
+        "description": "Si no se envían desde y hasta, se usa el mes en curso. El por cobrar es el saldo pendiente de las consultas del rango.\n",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Desde"
+          },
+          {
+            "$ref": "#/components/parameters/Hasta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumen del rango",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumenReporte"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SolicitudInvalida"
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      }
+    },
+    "/api/reportes/saldos-pendientes": {
+      "get": {
+        "tags": [
+          "Reportes"
+        ],
+        "operationId": "listarSaldosPendientes",
+        "summary": "Pacientes con saldo pendiente de pago",
+        "description": "Ordenadas de mayor a menor saldo.",
+        "x-roles": [
+          "ADMIN"
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de pacientes con deuda",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SaldoPaciente"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Token JWT obtenido en POST /api/v1/auth/login o /api/v1/auth/registro. Se envía en el encabezado Authorization con el formato Bearer seguido del token. El rol (ADMIN o USUARIO) va dentro del token.\n"
+      }
+    },
+    "parameters": {
+      "PacienteId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador de la paciente",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": 15
+      },
+      "CitaId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador de la cita",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": 40
+      },
+      "ConsultaId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador de la consulta",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": 120
+      },
+      "PagoId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador del pago",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": 300
+      },
+      "ServicioId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador del servicio",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": 2
+      },
+      "BloqueoId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador del bloqueo",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": 7
+      },
+      "Pagina": {
+        "name": "pagina",
+        "in": "query",
+        "description": "Número de página (empieza en 0)",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "Tamano": {
+        "name": "tamano",
+        "in": "query",
+        "description": "Cantidad de registros por página",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "Desde": {
+        "name": "desde",
+        "in": "query",
+        "description": "Fecha inicial, inclusive (yyyy-MM-dd)",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "example": "2026-11-01"
+      },
+      "Hasta": {
+        "name": "hasta",
+        "in": "query",
+        "description": "Fecha final, inclusive (yyyy-MM-dd)",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "example": "2026-11-30"
+      }
+    },
+    "responses": {
+      "SolicitudInvalida": {
+        "description": "Datos inválidos",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NoAutenticado": {
+        "description": "Falta el token, es inválido o está vencido",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "SinPermiso": {
+        "description": "El rol del usuario no permite esta operación, o el recurso es de otra paciente",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NoEncontrado": {
+        "description": "Recurso no encontrado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflicto": {
+        "description": "La operación entra en conflicto con datos existentes",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Rol": {
+        "type": "string",
+        "enum": [
+          "ADMIN",
+          "USUARIO"
+        ],
+        "example": "USUARIO"
+      },
+      "RegistroRequest": {
+        "type": "object",
+        "required": [
+          "nombres",
+          "apellidos",
+          "dni",
+          "telefono",
+          "correo",
+          "contrasena"
+        ],
+        "properties": {
+          "nombres": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "María"
+          },
+          "apellidos": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "Pérez Gómez"
+          },
+          "dni": {
+            "type": "string",
+            "maxLength": 20,
+            "example": "12345678"
+          },
+          "telefono": {
+            "type": "string",
+            "maxLength": 20,
+            "example": "987654321"
+          },
+          "fechaNacimiento": {
+            "type": "string",
+            "format": "date",
+            "example": "1990-05-14"
+          },
+          "correo": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 120,
+            "example": "maria@correo.com"
+          },
+          "contrasena": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 100,
+            "writeOnly": true,
+            "example": "ClaveSegura123"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "correo",
+          "contrasena"
+        ],
+        "properties": {
+          "correo": {
+            "type": "string",
+            "format": "email",
+            "example": "maria@correo.com"
+          },
+          "contrasena": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "example": "ClaveSegura123"
+          }
+        }
+      },
+      "SesionResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "tipo",
+          "expiraEnSegundos",
+          "usuario"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Token JWT para el encabezado Authorization",
+            "example": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIzIn0.firma"
+          },
+          "tipo": {
+            "type": "string",
+            "example": "Bearer"
+          },
+          "expiraEnSegundos": {
+            "type": "integer",
+            "example": 28800
+          },
+          "usuario": {
+            "$ref": "#/components/schemas/Usuario"
+          }
+        }
+      },
+      "Usuario": {
+        "type": "object",
+        "required": [
+          "id",
+          "correo",
+          "rol",
+          "activo"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true,
+            "example": 3
+          },
+          "correo": {
+            "type": "string",
+            "format": "email",
+            "example": "maria@correo.com"
+          },
+          "rol": {
+            "$ref": "#/components/schemas/Rol"
+          },
+          "pacienteId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Ficha de paciente enlazada; nulo para ADMIN",
+            "example": 15
+          },
+          "activo": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "CambioContrasenaRequest": {
+        "type": "object",
+        "required": [
+          "actual",
+          "nueva"
+        ],
+        "properties": {
+          "actual": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true
+          },
+          "nueva": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 100,
+            "writeOnly": true
+          }
+        }
+      },
+      "ServicioRequest": {
+        "type": "object",
+        "required": [
+          "nombre",
+          "duracionMinutos",
+          "precio"
+        ],
+        "properties": {
+          "nombre": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "Quiropodia"
+          },
+          "descripcion": {
+            "type": "string",
+            "maxLength": 500,
+            "example": "Corte, limado y tratamiento de durezas y callosidades"
+          },
+          "duracionMinutos": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 480,
+            "example": 45
+          },
+          "precio": {
+            "type": "number",
+            "minimum": 0,
+            "multipleOf": 0.01,
+            "description": "Precio en soles",
+            "example": 80.0
+          },
+          "activo": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "Servicio": {
+        "type": "object",
+        "required": [
+          "id",
+          "nombre",
+          "duracionMinutos",
+          "precio",
+          "activo"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true,
+            "example": 2
+          },
+          "nombre": {
+            "type": "string",
+            "example": "Quiropodia"
+          },
+          "descripcion": {
+            "type": "string",
+            "example": "Corte, limado y tratamiento de durezas y callosidades"
+          },
+          "duracionMinutos": {
+            "type": "integer",
+            "example": 45
+          },
+          "precio": {
+            "type": "number",
+            "example": 80.0
+          },
+          "activo": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "DiaSemana": {
+        "type": "string",
+        "enum": [
+          "LUNES",
+          "MARTES",
+          "MIERCOLES",
+          "JUEVES",
+          "VIERNES",
+          "SABADO",
+          "DOMINGO"
+        ],
+        "example": "LUNES"
+      },
+      "HorarioAtencion": {
+        "type": "object",
+        "required": [
+          "diaSemana",
+          "horaInicio",
+          "horaFin"
+        ],
+        "properties": {
+          "diaSemana": {
+            "$ref": "#/components/schemas/DiaSemana"
+          },
+          "horaInicio": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "Hora local de Lima (HH:mm)",
+            "example": "09:00"
+          },
+          "horaFin": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "Debe ser posterior a horaInicio",
+            "example": "13:00"
+          }
+        }
+      },
+      "HorarioSemanal": {
+        "type": "array",
+        "description": "Lista de bloques de atención; un día sin bloques es día no laborable",
+        "items": {
+          "$ref": "#/components/schemas/HorarioAtencion"
+        }
+      },
+      "BloqueoRequest": {
+        "type": "object",
+        "required": [
+          "inicio",
+          "fin"
+        ],
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-12-24T00:00:00-05:00"
+          },
+          "fin": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-12-26T00:00:00-05:00"
+          },
+          "motivo": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "Feriado y descanso"
+          }
+        }
+      },
+      "Bloqueo": {
+        "type": "object",
+        "required": [
+          "id",
+          "inicio",
+          "fin"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true,
+            "example": 7
+          },
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-12-24T00:00:00-05:00"
+          },
+          "fin": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-12-26T00:00:00-05:00"
+          },
+          "motivo": {
+            "type": "string",
+            "example": "Feriado y descanso"
+          }
+        }
+      },
+      "HorarioLibre": {
+        "type": "object",
+        "required": [
+          "inicio",
+          "fin"
+        ],
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-24T09:00:00-05:00"
+          },
+          "fin": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-24T09:45:00-05:00"
+          }
+        }
+      },
+      "Disponibilidad": {
+        "type": "object",
+        "required": [
+          "fecha",
+          "servicioId",
+          "duracionMinutos",
+          "horarios"
+        ],
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-24"
+          },
+          "servicioId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 2
+          },
+          "duracionMinutos": {
+            "type": "integer",
+            "example": 45
+          },
+          "horarios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HorarioLibre"
+            }
+          }
+        }
+      },
+      "EstadoCita": {
+        "type": "string",
+        "enum": [
+          "RESERVADA",
+          "ATENDIDA",
+          "CANCELADA",
+          "NO_ASISTIO"
+        ],
+        "example": "RESERVADA"
+      },
+      "CitaRequest": {
+        "type": "object",
+        "required": [
+          "servicioId",
+          "inicio"
+        ],
+        "properties": {
+          "servicioId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 2
+          },
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Debe coincidir con un horario devuelto por la disponibilidad",
+            "example": "2026-11-24T09:00:00-05:00"
+          },
+          "motivo": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Comentario de la paciente sobre su molestia",
+            "example": "Dolor en la uña del pie derecho"
+          },
+          "pacienteId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Solo ADMIN. Para USUARIO se ignora y se usa su propia ficha",
+            "example": 15
+          }
+        }
+      },
+      "ReprogramacionRequest": {
+        "type": "object",
+        "required": [
+          "inicio"
+        ],
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-25T10:00:00-05:00"
+          }
+        }
+      },
+      "CancelacionRequest": {
+        "type": "object",
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "maxLength": 300,
+            "example": "Surgió un imprevisto"
+          }
+        }
+      },
+      "CambioEstadoCitaRequest": {
+        "type": "object",
+        "required": [
+          "estado"
+        ],
+        "properties": {
+          "estado": {
+            "type": "string",
+            "enum": [
+              "ATENDIDA",
+              "NO_ASISTIO"
+            ],
+            "example": "ATENDIDA"
+          }
+        }
+      },
+      "Cita": {
+        "type": "object",
+        "required": [
+          "id",
+          "pacienteId",
+          "servicioId",
+          "inicio",
+          "fin",
+          "estado"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true,
+            "example": 40
+          },
+          "pacienteId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 15
+          },
+          "pacienteNombre": {
+            "type": "string",
+            "readOnly": true,
+            "example": "María Pérez Gómez"
+          },
+          "servicioId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 2
+          },
+          "servicioNombre": {
+            "type": "string",
+            "readOnly": true,
+            "example": "Quiropodia"
+          },
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-24T09:00:00-05:00"
+          },
+          "fin": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-11-24T09:45:00-05:00"
+          },
+          "motivo": {
+            "type": "string",
+            "example": "Dolor en la uña del pie derecho"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoCita"
+          }
+        }
+      },
+      "PaginaCitas": {
+        "type": "object",
+        "required": [
+          "contenido",
+          "pagina",
+          "tamano",
+          "total"
+        ],
+        "properties": {
+          "contenido": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cita"
+            }
+          },
+          "pagina": {
+            "type": "integer",
+            "example": 0
+          },
+          "tamano": {
+            "type": "integer",
+            "example": 20
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          }
+        }
+      },
+      "PacienteRequest": {
+        "type": "object",
+        "required": [
+          "nombres",
+          "apellidos"
+        ],
+        "properties": {
+          "nombres": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "María"
+          },
+          "apellidos": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Pérez Gómez"
+          },
+          "dni": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Documento de identidad (DNI, carné de extranjería u otro)",
+            "example": "12345678"
+          },
+          "telefono": {
+            "type": "string",
+            "maxLength": 20,
+            "example": "987654321"
+          },
+          "fechaNacimiento": {
+            "type": "string",
+            "format": "date",
+            "example": "1990-05-14"
+          },
+          "direccion": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "Av. Ejemplo 123, Lima"
+          },
+          "antecedentes": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Antecedentes clínicos relevantes",
+            "example": "Diabetes controlada. Uñas encarnadas recurrentes."
+          }
+        }
+      },
+      "Paciente": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PacienteRequest"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "readOnly": true,
+                "example": 15
+              },
+              "correo": {
+                "type": "string",
+                "format": "email",
+                "nullable": true,
+                "readOnly": true,
+                "description": "Correo de la cuenta; nulo si la paciente no tiene cuenta",
+                "example": "maria@correo.com"
+              }
+            }
+          }
+        ]
+      },
+      "PaginaPacientes": {
+        "type": "object",
+        "required": [
+          "contenido",
+          "pagina",
+          "tamano",
+          "total"
+        ],
+        "properties": {
+          "contenido": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Paciente"
+            }
+          },
+          "pagina": {
+            "type": "integer",
+            "example": 0
+          },
+          "tamano": {
+            "type": "integer",
+            "example": 20
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total de registros que cumplen el filtro",
+            "example": 1
+          }
+        }
+      },
+      "ConsultaRequest": {
+        "type": "object",
+        "required": [
+          "pacienteId"
+        ],
+        "properties": {
+          "pacienteId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 15
+          },
+          "citaId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Cita que originó la consulta (opcional)",
+            "example": 40
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Si se omite, se usa la fecha y hora actuales",
+            "example": "2026-11-24T09:50:00-05:00"
+          },
+          "diagnostico": {
+            "type": "string",
+            "maxLength": 2000,
+            "example": "Onicocriptosis leve en hallux derecho"
+          },
+          "tratamiento": {
+            "type": "string",
+            "maxLength": 2000,
+            "example": "Onicoplastía y curación"
+          },
+          "notas": {
+            "type": "string",
+            "maxLength": 2000,
+            "example": "Control en 15 días"
+          },
+          "monto": {
+            "type": "number",
+            "minimum": 0,
+            "multipleOf": 0.01,
+            "description": "Monto total a cobrar (soles). Si se omite y hay citaId, se usa el precio del servicio",
+            "example": 80.0
+          }
+        }
+      },
+      "Consulta": {
+        "type": "object",
+        "required": [
+          "id",
+          "pacienteId",
+          "fecha",
+          "monto",
+          "pagado",
+          "saldo"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true,
+            "example": 120
+          },
+          "pacienteId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 15
+          },
+          "pacienteNombre": {
+            "type": "string",
+            "readOnly": true,
+            "example": "María Pérez Gómez"
+          },
+          "citaId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "example": 40
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-24T09:50:00-05:00"
+          },
+          "diagnostico": {
+            "type": "string",
+            "example": "Onicocriptosis leve en hallux derecho"
+          },
+          "tratamiento": {
+            "type": "string",
+            "example": "Onicoplastía y curación"
+          },
+          "notas": {
+            "type": "string",
+            "example": "Control en 15 días"
+          },
+          "monto": {
+            "type": "number",
+            "example": 80.0
+          },
+          "pagado": {
+            "type": "number",
+            "readOnly": true,
+            "description": "Suma de pagos registrados",
+            "example": 50.0
+          },
+          "saldo": {
+            "type": "number",
+            "readOnly": true,
+            "description": "Monto menos pagado",
+            "example": 30.0
+          }
+        }
+      },
+      "PaginaConsultas": {
+        "type": "object",
+        "required": [
+          "contenido",
+          "pagina",
+          "tamano",
+          "total"
+        ],
+        "properties": {
+          "contenido": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Consulta"
+            }
+          },
+          "pagina": {
+            "type": "integer",
+            "example": 0
+          },
+          "tamano": {
+            "type": "integer",
+            "example": 20
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          }
+        }
+      },
+      "MetodoPago": {
+        "type": "string",
+        "enum": [
+          "EFECTIVO",
+          "YAPE"
+        ],
+        "example": "YAPE"
+      },
+      "PagoRequest": {
+        "type": "object",
+        "required": [
+          "consultaId",
+          "monto",
+          "metodo"
+        ],
+        "properties": {
+          "consultaId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 120
+          },
+          "monto": {
+            "type": "number",
+            "minimum": 0.01,
+            "multipleOf": 0.01,
+            "description": "Monto cobrado (soles)",
+            "example": 50.0
+          },
+          "metodo": {
+            "$ref": "#/components/schemas/MetodoPago"
+          },
+          "referencia": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Número de operación de Yape (opcional)",
+            "example": "00458712"
+          }
+        }
+      },
+      "Pago": {
+        "type": "object",
+        "required": [
+          "id",
+          "consultaId",
+          "monto",
+          "metodo",
+          "fecha"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true,
+            "example": 300
+          },
+          "consultaId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 120
+          },
+          "monto": {
+            "type": "number",
+            "example": 50.0
+          },
+          "metodo": {
+            "$ref": "#/components/schemas/MetodoPago"
+          },
+          "referencia": {
+            "type": "string",
+            "nullable": true,
+            "example": "00458712"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-11-24T10:05:00-05:00"
+          }
+        }
+      },
+      "PaginaPagos": {
+        "type": "object",
+        "required": [
+          "contenido",
+          "pagina",
+          "tamano",
+          "total"
+        ],
+        "properties": {
+          "contenido": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pago"
+            }
+          },
+          "pagina": {
+            "type": "integer",
+            "example": 0
+          },
+          "tamano": {
+            "type": "integer",
+            "example": 20
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          }
+        }
+      },
+      "IngresoDiario": {
+        "type": "object",
+        "required": [
+          "fecha",
+          "total"
+        ],
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-24"
+          },
+          "total": {
+            "type": "number",
+            "example": 130.0
+          }
+        }
+      },
+      "ResumenReporte": {
+        "type": "object",
+        "required": [
+          "desde",
+          "hasta",
+          "ingresoTotal",
+          "ingresoEfectivo",
+          "ingresoYape",
+          "numeroConsultas",
+          "pacientesAtendidos",
+          "porCobrar",
+          "ingresosPorDia"
+        ],
+        "properties": {
+          "desde": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-01"
+          },
+          "hasta": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-30"
+          },
+          "ingresoTotal": {
+            "type": "number",
+            "example": 1250.0
+          },
+          "ingresoEfectivo": {
+            "type": "number",
+            "example": 800.0
+          },
+          "ingresoYape": {
+            "type": "number",
+            "example": 450.0
+          },
+          "numeroConsultas": {
+            "type": "integer",
+            "example": 18
+          },
+          "pacientesAtendidos": {
+            "type": "integer",
+            "description": "Pacientes distintos atendidos en el rango",
+            "example": 14
+          },
+          "porCobrar": {
+            "type": "number",
+            "description": "Saldo pendiente de las consultas del rango",
+            "example": 120.0
+          },
+          "ingresosPorDia": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngresoDiario"
+            }
+          }
+        }
+      },
+      "SaldoPaciente": {
+        "type": "object",
+        "required": [
+          "pacienteId",
+          "pacienteNombre",
+          "saldo"
+        ],
+        "properties": {
+          "pacienteId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 15
+          },
+          "pacienteNombre": {
+            "type": "string",
+            "example": "María Pérez Gómez"
+          },
+          "saldo": {
+            "type": "number",
+            "example": 30.0
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje"
+        ],
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "description": "Código estable para que el cliente pueda reaccionar",
+            "example": "HORARIO_NO_DISPONIBLE"
+          },
+          "mensaje": {
+            "type": "string",
+            "description": "Mensaje legible para el usuario",
+            "example": "El horario seleccionado ya no está disponible"
+          },
+          "detalles": {
+            "type": "array",
+            "description": "Errores de validación por campo, si aplica",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "inicio: es obligatorio"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
